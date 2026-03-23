@@ -1,50 +1,8 @@
 {
-  "name": "@sigilx/sigilx-skill",
-  "version": "0.1.0",
-  "description": "SigilX public skill and typed client for verification jobs, pricing, and evaluator harnesses",
-  "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "engines": {
-    "node": ">=20"
-  },
-  "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    }
-  },
-  "files": [
-    "dist",
-    "README.md",
-    "SKILL.md"
-  ],
-  "publishConfig": {
-    "access": "public"
-  },
-  "scripts": {
-    "build": "tsc",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run --config vitest.config.ts"
-  },
-  "keywords": [
-    "sigilx",
-    "smart-contract",
-    "verification",
-    "formal-verification",
-    "base",
-    "openclaw",
-    "x402"
-  ],
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/consensus-hq/agent-pulse",
-    "directory": "packages/sigilx-skill-public"
-  },
-  "devDependencies": {
-    "@types/node": "^22.0.0",
-    "typescript": "^5.5.0",
-    "vitest": "^4.0.18"
-  }
+  "name": "@sigilx/skills",
+  "version": "1.0.0",
+  "description": "SigilX verification oracle skill for OpenClaw agents",
+  "main": "runtime/index.js",
+  "private": false,
+  "license": "MIT"
 }
