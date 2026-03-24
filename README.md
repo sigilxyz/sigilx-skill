@@ -21,30 +21,49 @@ npm install @sigilx/skills
 
 Any agent that speaks HTTP can use SigilX. Send a POST, pay via x402, get a verified result.
 
-### Free actions (no payment required)
+### Free actions
+
+Free actions use the chat endpoint:
 
 ```bash
 # Chat / ask questions
-curl -X POST https://api.sigilx.xyz/v1/jobs \
+curl -X POST https://api.sigilx.xyz/v1/chat \
   -H "Content-Type: application/json" \
-  -d '{"action": "chat", "input": "What can you verify?"}'
+  -d '{"messages": [{"role": "user", "content": "What can you verify?"}]}'
 
 # Research a contract
-curl -X POST https://api.sigilx.xyz/v1/jobs \
+curl -X POST https://api.sigilx.xyz/v1/chat \
   -H "Content-Type: application/json" \
-  -d '{"action": "research_contract", "input": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"}'
+  -d '{"messages": [{"role": "user", "content": "Research contract 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"}]}'
 ```
 
 ### Paid actions (x402 USDC on Base)
 
+Paid actions use the jobs endpoint. First request returns a 402 challenge:
+
 ```bash
-# Step 1: Send request without payment — get 402 challenge
+# Step 1: Send request — get 402 with payment requirements
 curl -X POST https://api.sigilx.xyz/v1/jobs \
   -H "Content-Type: application/json" \
   -d '{"action": "verify_proof", "input": "theorem add_zero (n : Nat) : n + 0 = n := by rfl"}'
 
-# Step 2: Sign x402 payment and resend with PAYMENT-SIGNATURE header
-# The 402 response tells you: amount, asset (USDC), payTo (treasury), network (Base)
+# Response: 402 Payment Required
+# {
+#   "x402Version": 1,
+#   "scheme": "exact",
+#   "network": "base-sepolia",
+#   "payload": {
+#     "amount": "10050",
+#     "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+#     "payTo": "0x010F576Ba8BA6f22c7365Eeb9E3a745327f7452F"
+#   }
+# }
+
+# Step 2: Sign EIP-712 TransferWithAuthorization and resend
+curl -X POST https://api.sigilx.xyz/v1/jobs \
+  -H "Content-Type: application/json" \
+  -H "Payment-Signature: <x402-signed-payment>" \
+  -d '{"action": "verify_proof", "input": "theorem add_zero (n : Nat) : n + 0 = n := by rfl"}'
 ```
 
 ## Pricing
@@ -53,7 +72,6 @@ curl -X POST https://api.sigilx.xyz/v1/jobs \
 |--------|-------|-------------|
 | `chat` | Free | Ask questions, get guidance |
 | `research_contract` | Free | Analyze any deployed contract |
-| `check_proof` | Free | Quick syntax check |
 | `verify_proof` | $0.50 | Full Lean 4 typecheck + cross-verification |
 | `audit_cert` | $0.50 | Re-verify an existing certificate |
 | `forge_test` | $5.00 | Run Foundry test suite |
@@ -61,19 +79,18 @@ curl -X POST https://api.sigilx.xyz/v1/jobs \
 | `mainnet_fork_test` | $7.50 | Test against live mainnet state |
 | `deep_audit` | $10.00 | Multi-engine comprehensive audit |
 | `standard_certificate` | $25.00 | On-chain cert with 3-evaluator quorum |
-| `premium_certificate` | $150.00 | BFT quorum certificate (7-13 evaluators) |
 
 ## Payment Rails
 
 | Rail | Header | Who uses it |
 |------|--------|------------|
-| x402 | `PAYMENT-SIGNATURE` | Agents with wallets |
+| x402 | `Payment-Signature` | Agents with wallets (USDC on Base) |
 | MPP | `MPP-Authorization` | Tempo-compatible agents |
 | Privy | `Authorization: Bearer <jwt>` | Human users on sigilx.xyz |
 
 ## Response Format
 
-Every paid action returns structured JSON:
+Paid actions return a job with polling and streaming URLs:
 
 ```json
 {
@@ -82,11 +99,18 @@ Every paid action returns structured JSON:
   "status": "queued",
   "pollUrl": "https://api.sigilx.xyz/v1/jobs/{jobId}",
   "streamUrl": "https://api.sigilx.xyz/v1/jobs/{jobId}/stream",
-  "jobToken": "eyJ..."
+  "jobToken": "eyJ...",
+  "quote": {
+    "serviceFee": "9000",
+    "platformFee": "1000",
+    "gasFee": "50",
+    "total": "10050",
+    "action": "verify_proof"
+  }
 }
 ```
 
-Verification results include:
+Verification results:
 
 ```json
 {
@@ -95,7 +119,8 @@ Verification results include:
   "ipfsCid": "bafkrei...",
   "leanVersion": "4.24.0",
   "sorryCount": 0,
-  "crossVerified": true
+  "crossVerified": true,
+  "verifier": "0x046a..."
 }
 ```
 
@@ -103,10 +128,14 @@ Verification results include:
 
 | Contract | Address |
 |----------|---------|
-| CertificateRegistry | `0xc1c20B5507f4F27480Fe580aD7C3dE8A335caBfE` |
+| CertificateRegistryV3 | `0x90786f1A716fCae0a88bB91472B4Bf9b31794B7C` |
 | SigilXJobRouter | `0xB659D06d2E06afFCAeeEd683b0997f9dd8EBA2Ee` |
-| EvaluatorRegistry | `0x927ab46ffe72834591032fb259438f4314cf86c3` |
+| EvaluatorRegistry (USDC) | `0x927ab46ffe72834591032fb259438f4314cf86c3` |
+| EvaluatorRegistry (SIGILX) | `0x0b2De5D10440b242dEDBe86Ee54588de908Cc770` |
+| SigilXToken | `0x26213ff340f919ECf7D482847406A5b618Ec45f8` |
 | FeeRouter | `0x010F576Ba8BA6f22c7365Eeb9E3a745327f7452F` |
+| TreasuryManager | `0xBAd92A83B751F060ed452Ff9725AACBcB8eDb406` |
+| SigilXEvaluatorV2 | `0xf5D04616ecA3be49feA323c205451936d7816B01` |
 
 ## Links
 
