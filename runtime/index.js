@@ -349,12 +349,70 @@ export async function premiumCertificate(input, context) {
   return callEngine("premium_certificate", input, context);
 }
 // ---------------------------------------------------------------------------
+// Sandbox Client
+// ---------------------------------------------------------------------------
+async function callSandbox(method, path, body) {
+  if (!config) {
+    return {
+      ok: false,
+      error: { message: "Skill not initialized", code: "NOT_INITIALIZED" },
+    };
+  }
+  const sandboxUrl = (
+    process.env.SIGILX_SANDBOX_URL ??
+    "http://sigilx-sandbox.railway.internal:8080"
+  ).replace(/\/$/, "");
+  const hmacHeaders = signRequest(config.hmacSecret);
+  const timeoutMs = config.timeoutMs ?? 120_000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const opts = {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        ...hmacHeaders,
+      },
+      signal: controller.signal,
+    };
+    if (body && method !== "GET") {
+      opts.body = JSON.stringify(body);
+    }
+    const res = await fetch(`${sandboxUrl}${path}`, opts);
+    const data = await res.json();
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: {
+          message: data.error?.message ?? `Sandbox returned ${res.status}`,
+          code: `HTTP_${res.status}`,
+        },
+      };
+    }
+    return { ok: true, ...data };
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      return {
+        ok: false,
+        error: { message: "Sandbox request timeout", code: "TIMEOUT" },
+      };
+    }
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    return {
+      ok: false,
+      error: { message: `Sandbox unreachable: ${msg}`, code: "UNREACHABLE" },
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+// ---------------------------------------------------------------------------
 // Skill Status (for orchestrator queries)
 // ---------------------------------------------------------------------------
 export function getStatus() {
   return {
     skill: "sigilx-skill",
-    version: "1.1.0",
+    version: "1.2.0",
     initialized: config !== null,
     engine: config?.engineUrl ?? "not configured",
     timeout: config?.timeoutMs ?? 0,
@@ -518,12 +576,90 @@ const TOOL_DEFS = [
       required: ["content"],
     },
   },
+  // ---- Sandbox tools ----
+  {
+    name: "sandbox_upload",
+    command: "__sandbox__",
+    description:
+      "Upload a file to the user's isolated sandbox workspace. Supports .lean, .sol, .js, .ts, .json files.",
+    parameters: {
+      type: "object",
+      properties: {
+        fileName: {
+          type: "string",
+          description: "Destination path inside the workspace (e.g. src/Main.lean)",
+        },
+        content: {
+          type: "string",
+          description: "File content to upload (UTF-8 text)",
+        },
+      },
+      required: ["fileName", "content"],
+    },
+  },
+  {
+    name: "sandbox_exec",
+    command: "__sandbox__",
+    description:
+      "Run a whitelisted command (lean, lake, forge, node) in the user's sandbox workspace.",
+    parameters: {
+      type: "object",
+      properties: {
+        command: {
+          type: "string",
+          enum: ["lean", "lake", "forge", "node"],
+          description: "Command to execute (must be one of: lean, lake, forge, node)",
+        },
+        args: {
+          type: "array",
+          items: { type: "string" },
+          description: "Command arguments (e.g. ['build'] for lake build)",
+        },
+        cwd: {
+          type: "string",
+          description: "Working directory inside workspace (optional, defaults to workspace root)",
+        },
+      },
+      required: ["command"],
+    },
+  },
+  {
+    name: "sandbox_list",
+    command: "__sandbox__",
+    description:
+      "List files in the user's sandbox workspace. Returns file names, sizes, and modification times.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "Subdirectory to list (optional, defaults to workspace root)",
+        },
+      },
+    },
+  },
+  {
+    name: "sandbox_status",
+    command: "__sandbox__",
+    description:
+      "Check health and resource usage of the user's sandbox workspace.",
+    parameters: {
+      type: "object",
+      properties: {},
+    },
+  },
 ];
 /**
  * OpenClaw Plugin entry point.
  * Registers all SigilX verification tools as callable functions.
  */
 export default function sigilxVerifyPlugin(api) {
+  console.log(`[sigilx-verify] Plugin loading...`);
+  console.log(`[sigilx-verify] SIGILX_ENGINE_URL=${process.env.SIGILX_ENGINE_URL ? 'SET' : 'MISSING'}`);
+  console.log(`[sigilx-verify] SIGILX_INTERNAL_HMAC_SECRET=${process.env.SIGILX_INTERNAL_HMAC_SECRET ? `SET (${process.env.SIGILX_INTERNAL_HMAC_SECRET.length} chars)` : 'MISSING'}`);
+  console.log(`[sigilx-verify] SKILL_PROXY_TOKEN=${process.env.SKILL_PROXY_TOKEN ? 'SET' : 'MISSING'}`);
+  console.log(`[sigilx-verify] SIGILX_SANDBOX_URL=${process.env.SIGILX_SANDBOX_URL ?? '(default: http://sigilx-sandbox.railway.internal:8080)'}`);
+
   // Initialize config from env on plugin load
   const engineUrl = process.env.SIGILX_ENGINE_URL;
   const hmacSecret = process.env.SIGILX_INTERNAL_HMAC_SECRET;
@@ -536,39 +672,109 @@ export default function sigilxVerifyPlugin(api) {
       timeoutMs: parseInt(process.env.SIGILX_ENGINE_TIMEOUT_MS ?? "120000", 10),
     };
   }
+  console.log(`[sigilx-verify] Config: ${config ? 'READY' : 'NOT CONFIGURED — tools will return error'}`);
+  console.log(`[sigilx-verify] Registering ${TOOL_DEFS.length} tools...`);
+
   // Register each tool
   for (const def of TOOL_DEFS) {
-    api.registerTool(
-      (_ctx) => ({
-        name: def.name,
-        description: def.description,
-        parameters: def.parameters,
-        async execute(params) {
-          if (!config) {
+    if (def.command === "__sandbox__") {
+      // Sandbox tools route to the sandbox service, not the verification engine
+      api.registerTool(
+        (_ctx) => ({
+          name: def.name,
+          description: def.description,
+          parameters: def.parameters,
+          async execute(params) {
+            if (!config) {
+              return {
+                type: "text",
+                text: JSON.stringify({
+                  ok: false,
+                  error: "SigilX engine not configured",
+                }),
+              };
+            }
+            const resolved = resolveExecutionContext(_ctx);
+            const { userId, sessionId } = resolved.context;
+            const normalized = normalizeToolParams(params, def.name);
+            let result;
+            switch (def.name) {
+              case "sandbox_upload":
+                result = await callSandbox("POST", "/internal/sandbox/upload", {
+                  userId,
+                  sessionId,
+                  fileName: normalized.fileName,
+                  content: normalized.content,
+                });
+                break;
+              case "sandbox_exec":
+                result = await callSandbox("POST", "/internal/sandbox/exec", {
+                  userId,
+                  sessionId,
+                  command: normalized.command,
+                  args: normalized.args ?? [],
+                  cwd: normalized.cwd,
+                });
+                break;
+              case "sandbox_list":
+                result = await callSandbox("POST", "/internal/sandbox/exec", {
+                  userId,
+                  sessionId,
+                  command: "ls",
+                  args: ["-la", normalized.path ?? "."],
+                });
+                break;
+              case "sandbox_status":
+                result = await callSandbox(
+                  "GET",
+                  `/internal/sandbox/status/${encodeURIComponent(sessionId)}`,
+                  null,
+                );
+                break;
+              default:
+                result = { ok: false, error: { message: "Unknown sandbox tool", code: "UNKNOWN" } };
+            }
+            return { type: "text", text: JSON.stringify(result) };
+          },
+        }),
+        { name: def.name },
+      );
+    } else {
+      // Verification engine tools
+      api.registerTool(
+        (_ctx) => ({
+          name: def.name,
+          description: def.description,
+          parameters: def.parameters,
+          async execute(params) {
+            if (!config) {
+              return {
+                type: "text",
+                text: JSON.stringify({
+                  ok: false,
+                  error: "SigilX engine not configured",
+                }),
+              };
+            }
+            const resolved = resolveExecutionContext(_ctx);
+            const result = await callEngine(
+              def.command,
+              params,
+              resolved.context,
+              resolved.jobToken,
+            );
             return {
               type: "text",
-              text: JSON.stringify({
-                ok: false,
-                error: "SigilX engine not configured",
-              }),
+              text: JSON.stringify(result),
             };
-          }
-          const resolved = resolveExecutionContext(_ctx);
-          const result = await callEngine(
-            def.command,
-            params,
-            resolved.context,
-            resolved.jobToken,
-          );
-          return {
-            type: "text",
-            text: JSON.stringify(result),
-          };
-        },
-      }),
-      { name: def.name },
-    );
+          },
+        }),
+        { name: def.name },
+      );
+    }
+    console.log(`[sigilx-verify] Registered tool: ${def.name}`);
   }
+  console.log(`[sigilx-verify] All ${TOOL_DEFS.length} tools registered successfully.`);
 }
 export const activate = sigilxVerifyPlugin;
 export const register = sigilxVerifyPlugin;
