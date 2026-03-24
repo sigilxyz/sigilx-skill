@@ -1,6 +1,6 @@
 {
   "name": "@sigilx/skills",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "SigilX verification oracle skill for OpenClaw agents",
   "main": "runtime/index.js",
   "private": false,

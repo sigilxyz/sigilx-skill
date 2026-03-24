@@ -7,7 +7,8 @@ metadata:
       {
         "emoji": "🔬",
         "homepage": "https://sigilx.xyz",
-        "requires": { "env": [] },
+        "primaryEnv": "SIGILX_ENGINE_URL",
+        "requires": { "env": ["SIGILX_ENGINE_URL", "SIGILX_INTERNAL_HMAC_SECRET", "SKILL_PROXY_TOKEN"] },
       },
   }
 ---
@@ -360,9 +361,25 @@ Default to Base Sepolia (84532) during testnet phase.
 
 ---
 
+## Security & Credentials
+
+| Variable | Purpose | Required |
+|---|---|---|
+| `SIGILX_ENGINE_URL` | Base URL of the SigilX verification engine API | Yes |
+| `SIGILX_INTERNAL_HMAC_SECRET` | HMAC signing secret for authenticated requests (min 32 chars) | Yes |
+| `SKILL_PROXY_TOKEN` | Bearer token for skill proxy authentication | Yes |
+| `SIGILX_ENGINE_TIMEOUT_MS` | Request timeout in milliseconds (default: 120000) | No |
+
+All credentials must be set in your OpenClaw runtime environment. Never embed secrets in skill JSON `env` blocks or commit them to source control.
+
+## Network Access
+
+This skill makes HTTPS requests **only** to the URL configured in `SIGILX_ENGINE_URL`. No data is sent to any other endpoint. All requests are HMAC-signed for mutual authentication between the agent runtime and the SigilX engine.
+
 ## Resources
 
 - **Frontend:** https://sigilx.xyz
 - **API:** https://api.sigilx.xyz
-- **ERC-8183 spec:** https://ethereum-magicians.org/t/erc-8183-agent-interaction-standard
+- **Contracts:** https://github.com/sigilxyz/sigilx-contracts
+- **ERC-8183 spec:** https://eips.ethereum.org/EIPS/eip-8183
 - **ERC-8004 spec:** https://eips.ethereum.org/EIPS/eip-8004
