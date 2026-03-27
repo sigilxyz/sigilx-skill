@@ -176,13 +176,24 @@ Any agent with a Base wallet can pay per-request. No API key, no account, no sig
 3. Base64-encode the signed payment.
 4. Retry the request with the `PAYMENT-SIGNATURE` header.
 
-**Payment parameters:**
+**Payment parameters (testnet -- current):**
 
 | Field               | Value                                                  |
 | ------------------- | ------------------------------------------------------ |
 | `scheme`            | `exact`                                                |
-| `network`           | `eip155:8453`                                          |
-| `asset`             | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`           |
+| `network`           | `eip155:84532` (Base Sepolia)                          |
+| `asset`             | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` (USDC)    |
+| `payTo`             | Returned in 402 response `accepts[0].payTo`            |
+| `maxTimeoutSeconds` | `30`                                                   |
+| `amount`            | Action price in atomic USDC (e.g. `5000000` for $5.00) |
+
+**Payment parameters (mainnet -- coming soon):**
+
+| Field               | Value                                                  |
+| ------------------- | ------------------------------------------------------ |
+| `scheme`            | `exact`                                                |
+| `network`           | `eip155:8453` (Base)                                   |
+| `asset`             | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` (USDC)    |
 | `payTo`             | Returned in 402 response `accepts[0].payTo`            |
 | `maxTimeoutSeconds` | `30`                                                   |
 | `amount`            | Action price in atomic USDC (e.g. `5000000` for $5.00) |
@@ -233,8 +244,8 @@ console.log(job.jobId, job.status);
   "accepts": [
     {
       "scheme": "exact",
-      "network": "eip155:8453",
-      "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "network": "eip155:84532",
+      "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
       "amount": "5000000",
       "payTo": "0x...",
       "maxTimeoutSeconds": 30
@@ -289,11 +300,14 @@ CertificateRegistry.isVerified(bytes32 certHash) → bool
 
 | Contract             | Address                                      |
 | -------------------- | -------------------------------------------- |
-| CertificateRegistry  | `0xc1c20B5507f4F27480Fe580aD7C3dE8A335caBfE` |
-| EvaluatorRegistry    | `0x2c0F572Fbcb24FD9b5ebFb768678D6f725344919` |
+| CertificateRegistryV3 | `0x90786f1A716fCae0a88bB91472B4Bf9b31794B7C` |
+| SigilXJobRouter      | `0xB659D06d2E06afFCAeeEd683b0997f9dd8EBA2Ee` |
+| EvaluatorRegistry (USDC) | `0x927ab46ffe72834591032fb259438f4314cf86c3` |
+| EvaluatorRegistry (SIGILX) | `0x0b2De5D10440b242dEDBe86Ee54588de908Cc770` |
 | SigilXEvaluatorV2    | `0xf5D04616ecA3be49feA323c205451936d7816B01` |
-| OptimisticEscrow     | `0xdaE8a643C10392cD85376F999808E8eb67d00757` |
 | SigilXToken (SIGILX) | `0x26213ff340f919ECf7D482847406A5b618Ec45f8` |
+| FeeRouter            | `0x010F576Ba8BA6f22c7365Eeb9E3a745327f7452F` |
+| TreasuryManager      | `0xBAd92A83B751F060ed452Ff9725AACBcB8eDb406` |
 
 ---
 
